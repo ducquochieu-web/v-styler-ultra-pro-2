@@ -1,0 +1,7 @@
+{
+  "name": "v-styler-ultra-pro-2",
+  "description": "A high-end virtual fashion application that uses Gemini 3 Pro and Veo to synchronize characters with clothing and generate multiple professional model poses and video animations.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
