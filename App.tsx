@@ -1,17 +1,23 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { ApiKeyGate } from './components/ApiKeyGate';
 import { MediaUpload } from './components/MediaUpload';
 import { identifyCharacter, generatePose } from './services/geminiService';
-import { saveProfileToDB, getAllProfilesFromDB, deleteProfileFromDB } from './services/storageService';
+import { 
+  saveProfileToDB, getAllProfilesFromDB, deleteProfileFromDB,
+  saveAtmosphereToDB, getCustomAtmospheresFromDB, deleteAtmosphereFromDB 
+} from './services/storageService';
 import { AspectRatio, ImageSize, StylerMedia, GenerationResult, Atmosphere, CharacterProfile, Language, TryOnMode } from './types';
+
+// Link QR Code donate mặc định (User provided)
+const DEFAULT_QR_CODE = "https://api.vietqr.io/image/970432-0356010226-FDrKsqk.jpg?amount=100000&addInfo=Tang%20coc%20cafe%20nhe";
 
 const DEFAULT_POSES: Record<Language, string[]> = {
   vi: ["Đứng Sang Trọng", "Dáng Đi Năng Động", "Ngồi Tự Nhiên", "Tựa Lưng Thời Thượng", "Dáng Quyền Lực"],
   en: ["Elegant Standing", "Dynamic Walk", "Candid Sitting", "High-Fashion Lean", "Power Pose"]
 };
 
-const ATMOSPHERES: Atmosphere[] = [
+const DEFAULT_ATMOSPHERES: Atmosphere[] = [
   { id: 'grand_cafe', name: { vi: 'Cà Phê Hoàng Gia', en: 'Grand Royal Cafe' }, icon: '💎', prompt: 'Inside an ultra-luxury Parisian grand cafe. High ceilings with intricate gold leaf moldings, massive crystal chandeliers, polished white Calacatta marble floors. Louis XIV style furniture with gold accents. Cinematic warm glow, soft bokeh, high-fashion editorial style.', color: 'rgba(251,191,36,0.12)' },
   { id: 'private_jet', name: { vi: 'Chuyên Cơ Riêng', en: 'Private Jet Cabin' }, icon: '✈️', prompt: 'Inside a Gulfstream G700 private jet cabin. Cream leather reclining seats, exotic dark wood paneling, cashmere blankets. Soft natural light through oval windows. Elite lifestyle photography, high-end commercial look.', color: 'rgba(255,255,255,0.08)' },
   { id: 'penthouse', name: { vi: 'Penthouse Đế Vương', en: 'Empire Penthouse' }, icon: '🏙️', prompt: 'A multi-level luxury penthouse overlooking Manhattan at twilight. Floor-to-ceiling glass walls, minimalist B&B Italia furniture, rare modern art. Blue hour lighting with warm interior highlights. Shot on Arri Alexa.', color: 'rgba(99,102,241,0.08)' },
@@ -29,11 +35,15 @@ export default function App() {
   const [lang, setLang] = useState<Language>('vi');
   const [isKeyValidated, setIsKeyValidated] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  
+  // Data States
   const [characterRefs, setCharacterRefs] = useState<StylerMedia[]>([]);
   const [characterDNA, setCharacterDNA] = useState<string>("");
   const [characterVault, setCharacterVault] = useState<CharacterProfile[]>([]);
   const [activeProfileId, setActiveProfileId] = useState<string | null>(null);
+  const [atmospheres, setAtmospheres] = useState<Atmosphere[]>(DEFAULT_ATMOSPHERES);
   
+  // Logic States
   const [poseRefs, setPoseRefs] = useState<StylerMedia[]>([]);
   const [isDNAEditing, setIsDNAEditing] = useState(false);
   const [isAnalyzingDNA, setIsAnalyzingDNA] = useState(false);
@@ -41,13 +51,25 @@ export default function App() {
   const [accessories, setAccessories] = useState<StylerMedia>();
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("3:4");
   const [imageSize, setImageSize] = useState<ImageSize>("1K");
-  const [selectedAtmosphere, setSelectedAtmosphere] = useState<string>(ATMOSPHERES[0].id);
-  const [tryOnMode, setTryOnMode] = useState<TryOnMode>("standard");
+  const [selectedAtmosphereId, setSelectedAtmosphereId] = useState<string>(DEFAULT_ATMOSPHERES[0].id);
+  const [tryOnMode, setTryOnMode] = useState<TryOnMode>("high_exposure");
   const [results, setResults] = useState<GenerationResult[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Atmosphere Dropdown & Creation States
+  const [isAtmoDropdownOpen, setIsAtmoDropdownOpen] = useState(false);
+  const [showAtmoCreator, setShowAtmoCreator] = useState(false);
+  const [newAtmoName, setNewAtmoName] = useState("");
+  const [newAtmoPrompt, setNewAtmoPrompt] = useState("");
+  
+  // Donate QR States
+  const [showDonate, setShowDonate] = useState(false);
+  const [localDonateQr, setLocalDonateQr] = useState<string | null>(null);
+  
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const t = {
     vi: {
@@ -68,7 +90,7 @@ export default function App() {
       synthBtn: "BẮT ĐẦU TỔNG HỢP SIÊU CẤP",
       awaiting: "V-STYLER",
       ready: "Hệ Thống Thời Trang Ảo Sẵn Sàng",
-      genStatus: "ĐANG TỔNG HỢP BỐI CẢNH",
+      genStatus: "ĐANG PHÂN TÍCH VẢI & BỐI CẢNH",
       subject: "Nhân Vật",
       pose: "Dáng",
       settings: "Cài đặt",
@@ -85,11 +107,23 @@ export default function App() {
       alertUpload: "Vui lòng tải lên ảnh nhân vật và trang phục.",
       eliteLook: "Dáng Elite",
       apiKeyError: "Lỗi API Key. Hãy nhập lại mã mới.",
-      modeLabel: "Chế Độ Xử Lý",
-      modeStandard: "Tiêu Chuẩn",
-      modeHighExposure: "Couture Pro",
-      modeDescStandard: "Dùng cho đồ casual, công sở.",
-      modeDescHigh: "Xử lý tối ưu cho Bikini, Đồ lót."
+      modeLabel: "Chế Độ Xử Lý (Khuyên dùng Pro)",
+      modeStandard: "Cơ Bản",
+      modeHighExposure: "Couture Pro (Gợi ý)",
+      modeDescStandard: "Dùng cho đồ casual đơn giản.",
+      modeDescHigh: "Giữ 100% cấu trúc vải & Form dáng.",
+      addAtmo: "Thêm Bối Cảnh Mới",
+      atmoName: "Tên Bối Cảnh (VD: Bãi Biển)",
+      atmoPrompt: "Mô tả chi tiết (Tiếng Anh tốt hơn): Ánh sáng, địa điểm, tâm trạng...",
+      saveAtmo: "Lưu Bối Cảnh",
+      customBadge: "Tùy Chỉnh",
+      deleteAtmoConfirm: "Xóa bối cảnh này vĩnh viễn?",
+      joinZalo: "Hỗ trợ Zalo",
+      donate: "Tặng Cafe",
+      donateTitle: "Tặng đội ngũ phát triển 1 ly cafe",
+      donateDesc: "Cảm ơn bạn đã đồng hành cùng V-Styler!",
+      uploadQr: "Thay ảnh QR (Chỉ bạn thấy)",
+      useDefaultQr: "Dùng ảnh mặc định"
     },
     en: {
       headerSub: "Premium AI Fashion Synthesis",
@@ -109,7 +143,7 @@ export default function App() {
       synthBtn: "BEGIN ULTRA SYNTHESIS",
       awaiting: "V-STYLER",
       ready: "Virtual Couture Engine Ready",
-      genStatus: "SYNTHESIZING ATMOSPHERE",
+      genStatus: "ANALYZING FABRIC & ATMOSPHERE",
       subject: "Subject",
       pose: "Pose",
       settings: "Settings",
@@ -126,11 +160,23 @@ export default function App() {
       alertUpload: "Please upload character and garment images.",
       eliteLook: "Elite Look",
       apiKeyError: "API Key Error. Please re-enter.",
-      modeLabel: "Processing Mode",
+      modeLabel: "Processing Mode (Pro Recommended)",
       modeStandard: "Standard",
       modeHighExposure: "Couture Pro",
-      modeDescStandard: "For casual, office wear.",
-      modeDescHigh: "Optimized for Swimwear/Intimate."
+      modeDescStandard: "For simple casual wear.",
+      modeDescHigh: "Maintains 100% Fabric Structure & Fit.",
+      addAtmo: "Add New Context",
+      atmoName: "Context Name (e.g., Beach)",
+      atmoPrompt: "Detailed Prompt: Lighting, location, mood...",
+      saveAtmo: "Save Context",
+      customBadge: "Custom",
+      deleteAtmoConfirm: "Delete this context permanently?",
+      joinZalo: "Zalo Support",
+      donate: "Donate",
+      donateTitle: "Buy the dev team a coffee",
+      donateDesc: "Thank you for supporting V-Styler!",
+      uploadQr: "Change QR (Local Only)",
+      useDefaultQr: "Use Default QR"
     }
   }[lang];
 
@@ -145,7 +191,7 @@ export default function App() {
     } catch (e) { return ''; }
   };
 
-  // 1. Khôi phục kho lưu trữ từ IndexedDB khi khởi chạy
+  // Load Character Vault
   useEffect(() => {
     const loadVault = async () => {
       try {
@@ -163,7 +209,35 @@ export default function App() {
     loadVault();
   }, []);
 
-  // 2. Tự động nhận diện DNA khi có ảnh nhân vật mới
+  // Load Custom Atmospheres
+  useEffect(() => {
+    const loadCustomAtmospheres = async () => {
+      try {
+        const customAtmos = await getCustomAtmospheresFromDB();
+        setAtmospheres([...DEFAULT_ATMOSPHERES, ...customAtmos]);
+      } catch (e) { console.error("Failed to load atmospheres:", e); }
+    };
+    loadCustomAtmospheres();
+  }, []);
+
+  // Load Local Donate QR (Browser specific override)
+  useEffect(() => {
+    const savedQr = localStorage.getItem('VSTYLER_DONATE_QR');
+    if (savedQr) setLocalDonateQr(savedQr);
+  }, []);
+
+  // Click outside listener for dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsAtmoDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // DNA Analysis
   useEffect(() => {
     const updateDNA = async () => {
       if (activeProfileId) return;
@@ -178,7 +252,6 @@ export default function App() {
     updateDNA();
   }, [characterRefs, activeProfileId]);
 
-  // 3. Hàm lưu hồ sơ vào IndexedDB (KHÔNG DÙNG localStorage)
   const saveCurrentProfile = async () => {
     if (!characterDNA || characterRefs.length === 0) return;
     const name = prompt(t.promptModelName, `${t.defaultModelName} ${characterVault.length + 1}`);
@@ -194,14 +267,12 @@ export default function App() {
 
     try {
       await saveProfileToDB(newProfile);
-      // Cập nhật state UI sau khi lưu thành công vào DB
       setCharacterVault(prev => [...prev, newProfile]);
       setActiveProfileId(newProfile.id);
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (e) {
-      alert("Lỗi lưu trữ: Trình duyệt từ chối lưu dữ liệu lớn hoặc không hỗ trợ IndexedDB.");
-      console.error(e);
+      alert("Lỗi lưu trữ DB.");
     }
   };
 
@@ -232,6 +303,47 @@ export default function App() {
     }
   };
 
+  const saveCustomAtmosphere = async () => {
+    if (!newAtmoName || !newAtmoPrompt) return;
+
+    // Generate random pastel color for UI
+    const hue = Math.floor(Math.random() * 360);
+    const color = `rgba(${hue}, 70, 50, 0.15)`;
+
+    const newAtmo: Atmosphere = {
+      id: `custom-${Date.now()}`,
+      name: { vi: newAtmoName, en: newAtmoName }, // Use same name for both unless we add translation later
+      prompt: newAtmoPrompt,
+      icon: '✨',
+      color: color,
+      isCustom: true
+    };
+
+    try {
+      await saveAtmosphereToDB(newAtmo);
+      setAtmospheres(prev => [...prev, newAtmo]);
+      setSelectedAtmosphereId(newAtmo.id);
+      setShowAtmoCreator(false);
+      setNewAtmoName("");
+      setNewAtmoPrompt("");
+    } catch (e) {
+      alert("Lỗi lưu bối cảnh.");
+    }
+  };
+
+  const deleteCustomAtmosphere = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    if (confirm(t.deleteAtmoConfirm)) {
+      try {
+        await deleteAtmosphereFromDB(id);
+        setAtmospheres(prev => prev.filter(a => a.id !== id));
+        if (selectedAtmosphereId === id) setSelectedAtmosphereId(DEFAULT_ATMOSPHERES[0].id);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
   const handleGenerate = async () => {
     if (characterRefs.length === 0 || !clothing) {
       alert(t.alertUpload);
@@ -240,12 +352,12 @@ export default function App() {
     setIsGenerating(true);
     setResults([]);
     try {
-      const atmoObj = ATMOSPHERES.find(a => a.id === selectedAtmosphere) || ATMOSPHERES[0];
-      const iterationCount = poseRefs.length > 0 ? poseRefs.length : 5;
+      const atmoObj = atmospheres.find(a => a.id === selectedAtmosphereId) || atmospheres[0];
+      const iterationCount = poseRefs.length > 0 ? poseRefs.length : 4;
 
       for (let i = 0; i < iterationCount; i++) {
-        setStatusMessage(`${t.genStatus} ${atmoObj.name[lang].toUpperCase()}... [${i + 1}/${iterationCount}]`);
-        const currentPose = poseRefs.length > 0 ? poseRefs[i] : DEFAULT_POSES[lang][i];
+        setStatusMessage(`${t.genStatus} [${i + 1}/${iterationCount}]`);
+        const currentPose = poseRefs.length > 0 ? poseRefs[i] : DEFAULT_POSES[lang][i % DEFAULT_POSES[lang].length];
         
         try {
           const poseImg = await generatePose(
@@ -262,14 +374,13 @@ export default function App() {
             }]);
           }
         } catch (innerError: any) {
-          console.error("Single generation failed:", innerError);
           if (innerError.message === "API_KEY_EXPIRED") {
             alert(t.apiKeyError);
             setShowSettings(true);
             setIsKeyValidated(false);
             break;
           } else {
-            alert(`${lang === 'vi' ? 'Lỗi' : 'Error'} ${i+1}: ${innerError.message}`);
+            console.error(innerError);
           }
         }
       }
@@ -292,7 +403,7 @@ export default function App() {
   };
 
   const handleManualKey = () => {
-    const key = prompt("Nhập API Key của bạn:");
+    const key = prompt("Nhập API Key:");
     if (key && key.length > 20) {
       localStorage.setItem('VSTYLER_CUSTOM_API_KEY', key.trim());
       setIsKeyValidated(true);
@@ -300,7 +411,23 @@ export default function App() {
     }
   };
 
-  const currentAtmo = ATMOSPHERES.find(a => a.id === selectedAtmosphere) || ATMOSPHERES[0];
+  const handleDonateQrUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      setLocalDonateQr(result);
+      localStorage.setItem('VSTYLER_DONATE_QR', result);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const currentAtmo = atmospheres.find(a => a.id === selectedAtmosphereId) || atmospheres[0];
+
+  // Logic hiển thị QR: Ưu tiên LocalStorage (để test) -> DEFAULT_QR_CODE
+  const displayQr = localDonateQr || DEFAULT_QR_CODE;
 
   return (
     <div className="min-h-screen bg-[#050505] text-white flex flex-col selection:bg-amber-500/30">
@@ -380,19 +507,61 @@ export default function App() {
               {isDNAEditing && <textarea value={characterDNA} readOnly className="w-full h-32 bg-black/80 border border-white/10 rounded-2xl mt-4 p-4 text-[10px] font-mono text-indigo-400/60 outline-none ring-1 ring-white/5 scrollbar-hide shadow-inner" />}
             </section>
 
-            <section>
+            <section className="relative z-50">
               <h3 className="text-[11px] font-black text-white/40 uppercase tracking-[0.2em] mb-5">{t.atmoArch}</h3>
-              <div className="grid grid-cols-1 gap-2.5">
-                {ATMOSPHERES.map(atmo => (
-                  <button key={atmo.id} onClick={() => setSelectedAtmosphere(atmo.id)} className={`flex items-center group relative overflow-hidden p-4 rounded-2xl border transition-all duration-500 ${selectedAtmosphere === atmo.id ? 'bg-amber-600/20 border-amber-400 shadow-[0_10px_30px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20'}`}>
-                    <span className={`text-2xl mr-4 transition-transform duration-500 ${selectedAtmosphere === atmo.id ? 'scale-125' : 'group-hover:scale-110 opacity-50'}`}>{atmo.icon}</span>
+              
+              <div className="relative" ref={dropdownRef}>
+                <button 
+                  onClick={() => setIsAtmoDropdownOpen(!isAtmoDropdownOpen)}
+                  className="w-full p-4 rounded-2xl border bg-white/5 border-white/10 hover:border-amber-500/30 transition-all flex items-center justify-between group"
+                >
+                  <div className="flex items-center space-x-4">
+                    <span className="text-2xl">{currentAtmo.icon}</span>
                     <div className="flex flex-col items-start">
-                      <span className={`text-[10px] font-black uppercase tracking-widest ${selectedAtmosphere === atmo.id ? 'text-amber-400' : 'text-gray-400'}`}>{atmo.name[lang]}</span>
-                      <span className="text-[8px] text-white/30 font-medium uppercase tracking-tighter mt-0.5 line-clamp-1">{t.luxuryEnv}</span>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-white group-hover:text-amber-400 transition-colors">
+                        {currentAtmo.name[lang]}
+                      </span>
+                      <span className="text-[8px] text-white/30 uppercase tracking-tighter mt-0.5 line-clamp-1 max-w-[200px]">
+                        {currentAtmo.isCustom ? t.customBadge : t.luxuryEnv}
+                      </span>
                     </div>
-                    {selectedAtmosphere === atmo.id && <div className="absolute right-4 w-1.5 h-1.5 bg-amber-500 rounded-full shadow-[0_0_10px_rgba(245,158,11,1)] animate-pulse" />}
-                  </button>
-                ))}
+                  </div>
+                  <span className={`text-white/30 transition-transform duration-300 ${isAtmoDropdownOpen ? 'rotate-180' : ''}`}>▼</span>
+                </button>
+
+                {isAtmoDropdownOpen && (
+                  <div className="absolute top-full left-0 right-0 mt-2 bg-[#111] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden max-h-80 overflow-y-auto z-50 animate-in fade-in zoom-in-95 duration-200 scrollbar-hide">
+                     <button 
+                        onClick={() => { setShowAtmoCreator(true); setIsAtmoDropdownOpen(false); }}
+                        className="w-full p-4 border-b border-white/5 flex items-center space-x-3 text-amber-500 hover:bg-amber-500/10 transition-colors"
+                     >
+                        <div className="w-8 h-8 rounded-lg border border-amber-500/30 flex items-center justify-center font-bold text-lg">+</div>
+                        <span className="text-[10px] font-black uppercase tracking-widest">{t.addAtmo}</span>
+                     </button>
+                    {atmospheres.map(atmo => (
+                      <div key={atmo.id} className="relative group/item">
+                        <button 
+                          onClick={() => { setSelectedAtmosphereId(atmo.id); setIsAtmoDropdownOpen(false); }}
+                          className={`w-full p-3 flex items-center space-x-3 hover:bg-white/5 transition-colors ${selectedAtmosphereId === atmo.id ? 'bg-white/5' : ''}`}
+                        >
+                          <span className="text-xl">{atmo.icon}</span>
+                          <div className="flex flex-col items-start">
+                             <span className={`text-[9px] font-bold uppercase tracking-widest ${selectedAtmosphereId === atmo.id ? 'text-amber-400' : 'text-gray-400'}`}>{atmo.name[lang]}</span>
+                             {atmo.isCustom && <span className="text-[7px] bg-indigo-500/20 text-indigo-300 px-1 rounded border border-indigo-500/20">{t.customBadge}</span>}
+                          </div>
+                        </button>
+                        {atmo.isCustom && (
+                          <button 
+                            onClick={(e) => deleteCustomAtmosphere(e, atmo.id)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-white/20 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition-all"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
 
@@ -429,7 +598,7 @@ export default function App() {
           </div>
 
           <div className="p-8 border-t border-white/10 bg-black/60 backdrop-blur-md">
-            <button onClick={handleGenerate} disabled={characterRefs.length === 0 || !clothing || isGenerating || isAnalyzingDNA} className="w-full py-6 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-700 text-white font-black rounded-[24px] shadow-[0_15px_40px_rgba(245,158,11,0.25)] transition-all hover:shadow-[0_20px_50px_rgba(245,158,11,0.35)] disabled:opacity-10 uppercase tracking-[0.3em] text-[11px] flex items-center justify-center space-x-4 active:scale-[0.97] group border border-amber-400/30">
+            <button onClick={handleGenerate} disabled={characterRefs.length === 0 || !clothing || isGenerating || isAnalyzingDNA} className="w-full py-6 bg-gradient-to-r from-amber-500 via-amber-600 to-yellow-700 text-white font-black rounded-[24px] shadow-[0_15px_40px_rgba(245,158,11,0.25)] transition-all hover:shadow-[0_20px_50px_rgba(245,158,11,0.35)] disabled:opacity-10 uppercase tracking-[0.3em] text-[11px] flex items-center justify-center space-x-4 active:scale-[0.97] group border border-amber-400/30 mb-4">
               {isGenerating ? <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : (
                 <>
                   <span>{t.synthBtn}</span>
@@ -437,6 +606,17 @@ export default function App() {
                 </>
               )}
             </button>
+            
+            <div className="grid grid-cols-2 gap-3">
+              <a href="https://zalo.me/g/tccvup263" target="_blank" rel="noopener noreferrer" className="py-3 bg-[#0068FF]/10 hover:bg-[#0068FF]/20 border border-[#0068FF]/30 text-[#0068FF] font-black rounded-[20px] uppercase tracking-[0.2em] text-[9px] flex items-center justify-center space-x-2 transition-all hover:shadow-[0_0_20px_rgba(0,104,255,0.2)] active:scale-95 group">
+                <span className="text-lg group-hover:scale-110 transition-transform">💬</span>
+                <span>{t.joinZalo}</span>
+              </a>
+              <button onClick={() => setShowDonate(true)} className="py-3 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-400 font-black rounded-[20px] uppercase tracking-[0.2em] text-[9px] flex items-center justify-center space-x-2 transition-all hover:shadow-[0_0_20px_rgba(236,72,153,0.2)] active:scale-95 group">
+                <span className="text-lg group-hover:scale-110 transition-transform">☕</span>
+                <span>{t.donate}</span>
+              </button>
+            </div>
           </div>
         </aside>
 
@@ -525,6 +705,84 @@ export default function App() {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* CUSTOM ATMOSPHERE CREATOR MODAL */}
+      {showAtmoCreator && (
+        <div className="fixed inset-0 z-[120] bg-black/80 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300">
+           <div className="max-w-md w-full bg-[#111] border border-amber-500/20 rounded-[32px] p-8 shadow-2xl relative">
+              <button onClick={() => setShowAtmoCreator(false)} className="absolute top-6 right-6 text-white/30 hover:text-white">✕</button>
+              <h3 className="text-xl font-black uppercase tracking-widest mb-6 text-white">{t.addAtmo}</h3>
+              <div className="space-y-5">
+                 <div>
+                    <label className="text-[9px] font-black text-white/40 uppercase tracking-widest block mb-2">{t.atmoName}</label>
+                    <input 
+                      type="text" 
+                      value={newAtmoName}
+                      onChange={e => setNewAtmoName(e.target.value)}
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-amber-500/50"
+                      placeholder="e.g. Neon City"
+                    />
+                 </div>
+                 <div>
+                    <label className="text-[9px] font-black text-white/40 uppercase tracking-widest block mb-2">{t.atmoPrompt}</label>
+                    <textarea 
+                      value={newAtmoPrompt}
+                      onChange={e => setNewAtmoPrompt(e.target.value)}
+                      className="w-full h-32 bg-white/5 border border-white/10 rounded-xl p-4 text-sm text-white outline-none focus:border-amber-500/50 resize-none"
+                      placeholder="Detailed description..."
+                    />
+                 </div>
+                 <button 
+                    onClick={saveCustomAtmosphere}
+                    disabled={!newAtmoName || !newAtmoPrompt}
+                    className="w-full py-4 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black uppercase tracking-widest rounded-xl transition-all"
+                 >
+                    {t.saveAtmo}
+                 </button>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* DONATE MODAL */}
+      {showDonate && (
+        <div className="fixed inset-0 z-[150] bg-black/90 backdrop-blur-xl flex items-center justify-center p-6 animate-in fade-in duration-300" onClick={() => setShowDonate(false)}>
+           <div className="max-w-sm w-full bg-white rounded-[32px] p-8 shadow-[0_0_100px_rgba(236,72,153,0.3)] relative text-center" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setShowDonate(false)} className="absolute top-4 right-4 w-8 h-8 flex items-center justify-center bg-gray-100 rounded-full text-gray-500 hover:bg-gray-200">✕</button>
+              <h3 className="text-xl font-black uppercase tracking-widest mb-2 text-gray-900">{t.donateTitle}</h3>
+              <p className="text-xs text-gray-500 mb-6">{t.donateDesc}</p>
+              
+              <div className="bg-gray-100 p-4 rounded-3xl mb-4 relative group">
+                 {displayQr && displayQr !== "" ? (
+                    <>
+                       <img 
+                          src={displayQr} 
+                          alt="Donate QR" 
+                          className="w-full h-auto rounded-xl shadow-lg mix-blend-multiply"
+                       />
+                       {localDonateQr && (
+                          <button 
+                             onClick={() => { setLocalDonateQr(null); localStorage.removeItem('VSTYLER_DONATE_QR'); }}
+                             className="absolute top-2 right-2 bg-white text-gray-600 p-2 rounded-full shadow-md text-[9px] font-bold opacity-0 group-hover:opacity-100 transition-opacity hover:bg-gray-100"
+                          >
+                             {t.useDefaultQr}
+                          </button>
+                       )}
+                    </>
+                 ) : (
+                    <div className="flex items-center justify-center h-64 text-gray-400 text-xs">Loading QR...</div>
+                 )}
+              </div>
+              
+              <label className="block mb-4 cursor-pointer">
+                 <span className="text-[10px] text-pink-500 font-bold hover:underline">{t.uploadQr}</span>
+                 <input type="file" className="hidden" accept="image/*" onChange={handleDonateQrUpload} />
+              </label>
+
+              <p className="text-[10px] text-gray-400 font-mono">VPBank • 0356010226 • THAN CONG HAI</p>
+           </div>
         </div>
       )}
 

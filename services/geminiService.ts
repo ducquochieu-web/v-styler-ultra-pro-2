@@ -3,7 +3,6 @@ import { GoogleGenAI, Type, GenerateContentResponse, Modality } from "@google/ge
 import { AspectRatio, ImageSize, StylerMedia, TryOnMode } from "../types";
 
 export const createAI = () => {
-  // Ưu tiên lấy key thủ công từ localStorage, nếu không có mới dùng process.env.API_KEY
   const manualKey = localStorage.getItem('VSTYLER_CUSTOM_API_KEY');
   const apiKey = manualKey || process.env.API_KEY;
   return new GoogleGenAI({ apiKey: apiKey });
@@ -14,7 +13,7 @@ export const identifyCharacter = async (characterRefs: StylerMedia[]) => {
   const parts: any[] = [];
   
   parts.push({ text: "### ROLE: BIOMETRIC_CONSISTENCY_ENGINE" });
-  parts.push({ text: "Task: Analyze the subject and generate a detailed DNA profile. Focus on immutable facial geometry, bone structure, and specific skin undertones to ensure perfect character locking in future generations." });
+  parts.push({ text: "Task: Analyze the subject and generate a detailed DNA profile. Focus on immutable facial geometry, bone structure, and specific skin undertones." });
   
   characterRefs.forEach((media) => {
     parts.push({ inlineData: { data: media.base64!, mimeType: media.mimeType! } });
@@ -39,45 +38,49 @@ export const generatePose = async (
   const ai = createAI();
   const parts: any[] = [];
   
-  // Nguồn A: Nhân vật (Mặt chính)
-  parts.push({ text: "### INPUT_A (SUBJECT_IDENTITY):" });
+  // Nguồn A: Nhân vật đích
+  parts.push({ text: "### SOURCE_A (IDENTITY): The target person who will wear the clothes." });
   parts.push({ inlineData: { data: characterRefs[0].base64!, mimeType: characterRefs[0].mimeType! } });
   
-  // Nguồn B: Trang phục
-  parts.push({ text: "### INPUT_B (GARMENT_REFERENCE):" });
+  // Nguồn B: Trang phục gốc (Cực kỳ quan trọng)
+  parts.push({ text: "### SOURCE_B (MASTER_GARMENT): The exact clothing to be transferred. This is the ONLY source for fabric, color, pattern, and design." });
   parts.push({ inlineData: { data: clothing.base64!, mimeType: clothing.mimeType! } });
 
   if (accessories?.base64) {
-    parts.push({ text: "### INPUT_C (ACCESSORY):" });
+    parts.push({ text: "### SOURCE_C (ACCESSORY): Add this item to the final result." });
     parts.push({ inlineData: { data: accessories.base64, mimeType: accessories.mimeType! } });
   }
 
   if (typeof poseIdentifier !== 'string') {
-    parts.push({ text: "### INPUT_D (POSE_REFERENCE):" });
+    parts.push({ text: "### SOURCE_D (POSE_GUIDE): Follow this skeletal structure." });
     parts.push({ inlineData: { data: poseIdentifier.base64!, mimeType: poseIdentifier.mimeType! } });
   }
 
   let synthesisPrompt = "";
+  // Đảm bảo luôn có mô tả bối cảnh, nếu không có thì dùng mặc định Studio
+  const backgroundPrompt = config.atmosphere && config.atmosphere.trim() !== "" 
+    ? config.atmosphere 
+    : "Professional studio lighting, clean neutral luxury background";
 
   if (config.mode === "high_exposure") {
     synthesisPrompt = `
-    [CONTEXT: PROFESSIONAL VIRTUAL CLOTHING SIMULATION]
-    1. TARGET: Render the EXACT person from INPUT_A. Maintain total facial consistency. (Identity Ref: ${characterDNA?.substring(0, 300)})
-    2. GARMENT: Seamlessly drape the clothing from INPUT_B onto the person from INPUT_A. 
-    3. PHOTOGRAPHY: Style this as a high-end luxury editorial photoshoot. Use artistic studio lighting and professional composition.
-    4. SKELETON: Follow the ${typeof poseIdentifier === 'string' ? 'standing pose: ' + poseIdentifier : 'pose from INPUT_D'}.
-    5. ENVIRONMENT: ${config.atmosphere || "Clean professional studio backdrop"}.
-    6. MANDATORY: This is a professional fashion visualization. Ensure high-quality rendering of fabrics and skin textures.
-    7. RESTRICTION: Do not use the face of the person in INPUT_B. Use ONLY the face from INPUT_A.
+    [TASK: HIGH-FIDELITY GARMENT TRANSFER]
+    1. SUBJECT: Render the person from SOURCE_A with absolute facial and body consistency. DNA: ${characterDNA?.substring(0, 200)}.
+    2. CLOTHING: Extract the EXACT garment from SOURCE_B. Preserve the precise texture, weaving pattern, logos, and color shade. Do not simplify or alter the design.
+    3. FIT: Drape the SOURCE_B clothing onto the SOURCE_A body perfectly. The clothing must look like it was worn by SOURCE_A in the photo.
+    4. POSE: ${typeof poseIdentifier === 'string' ? poseIdentifier : 'Mirror the pose from SOURCE_D'}.
+    5. BACKGROUND/ENVIRONMENT: ${backgroundPrompt}. Ensure the lighting on the subject matches this environment perfectly.
+    6. QUALITY: 8k resolution, realistic fabric folds, and shadow interaction between fabric and skin.
+    7. RESTRICTION: IGNORE the person in SOURCE_B. Use ONLY the person from SOURCE_A.
     `;
   } else {
     synthesisPrompt = `
-    [CONTEXT: FASHION CATALOG GENERATION]
-    1. MODEL: Replace the person in INPUT_B with the identity of the person in INPUT_A.
-    2. CLOTHING: Keep the clothing from INPUT_B exactly as is.
-    3. STYLE: Bright, clean, commercial catalog photography.
-    4. POSE: ${typeof poseIdentifier === 'string' ? poseIdentifier : 'Follow INPUT_D'}.
-    5. SETTING: ${config.atmosphere}.
+    [TASK: COMMERCIAL VIRTUAL TRY-ON]
+    1. MANDATORY: The output person must be the person from SOURCE_A.
+    2. MANDATORY: The output clothing must be an IDENTICAL copy of the clothing in SOURCE_B (pattern, color, fabric).
+    3. ENVIRONMENT: ${backgroundPrompt}.
+    4. POSE: ${typeof poseIdentifier === 'string' ? poseIdentifier : 'Follow SOURCE_D'}.
+    5. STYLE: Sharp, high-contrast catalog photography.
     `;
   }
 
@@ -96,31 +99,19 @@ export const generatePose = async (
     });
 
     let finalImg = null;
-    let feedback = "";
-
     if (response.candidates?.[0]?.content?.parts) {
       for (const part of response.candidates[0].content.parts) {
         if (part.inlineData?.data) {
           finalImg = `data:image/png;base64,${part.inlineData.data}`;
           break;
         }
-        if (part.text) feedback += part.text;
       }
     }
 
     if (finalImg) return finalImg;
-
-    if (feedback.toLowerCase().includes("safety") || feedback.toLowerCase().includes("policy") || feedback.length > 0) {
-      throw new Error("AI Safety Filter: Trang phục hoặc tư thế này đã kích hoạt bộ lọc an toàn. Hãy thử chọn bối cảnh khác.");
-    }
-    
-    throw new Error("Mô hình không trả về ảnh. Có thể do lỗi kết nối.");
+    throw new Error("Model failed to render. Please check images or try a different atmosphere.");
   } catch (error: any) {
-    if (error.message?.includes("entity was not found") || error.message?.includes("API_KEY_EXPIRED")) {
-      // Xóa key lỗi khỏi localStorage để người dùng nhập lại
-      localStorage.removeItem('VSTYLER_CUSTOM_API_KEY');
-      throw new Error("API_KEY_EXPIRED");
-    }
+    if (error.message?.includes("entity was not found")) throw new Error("API_KEY_EXPIRED");
     throw error;
   }
 };

@@ -10,6 +10,7 @@ export type Atmosphere = {
   prompt: string;
   icon: string;
   color: string;
+  isCustom?: boolean;
 };
 
 export interface CharacterProfile {
