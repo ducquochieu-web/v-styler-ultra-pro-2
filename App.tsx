@@ -442,6 +442,14 @@ export default function App() {
           </div>
         </div>
 
+        {/* VIN MEDIA GLOBAL CREDIT */}
+        <div className="hidden lg:flex flex-col items-center absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 group cursor-pointer" onClick={() => window.open('https://vinmediaglobal.com', '_blank')}>
+           <span className="text-[8px] text-white/20 uppercase tracking-[0.3em] font-medium group-hover:text-white/40 transition-colors">phát triển bởi</span>
+           <span className="text-[10px] font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-200 via-yellow-400 to-amber-500 uppercase tracking-[0.2em] hover:brightness-150 transition-all mt-0.5 shadow-[0_0_20px_rgba(251,191,36,0.2)]">
+             Vin Media Global
+           </span>
+        </div>
+
         <div className="flex items-center space-x-8">
           {saveSuccess && <div className="text-[10px] font-black text-green-400 uppercase tracking-widest animate-pulse border-b border-green-500/30 pb-1">✓ SECURED</div>}
           <div className={`hidden md:flex px-6 py-2.5 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all duration-500 items-center space-x-3 shadow-2xl ${characterDNA ? (activeProfileId ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-amber-500/10' : 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400 shadow-indigo-500/10') : 'bg-white/5 border-white/10 text-gray-500'}`}>
