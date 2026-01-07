@@ -4,7 +4,7 @@ import { AspectRatio, ImageSize, StylerMedia, TryOnMode } from "../types";
 
 export const createAI = () => {
   const manualKey = localStorage.getItem('VSTYLER_CUSTOM_API_KEY');
-  const apiKey = manualKey || process.env.API_KEY;
+  const apiKey = manualKey || import.meta.env.VITE_API_KEY || undefined;
   return new GoogleGenAI({ apiKey: apiKey });
 };
 
