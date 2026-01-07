@@ -97,15 +97,19 @@ export const ApiKeyGate: React.FC<ApiKeyGateProps> = ({ onValidated }) => {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/95 backdrop-blur-2xl p-6">
-      {/* Donate Button - Top Right */}
-      <div className="absolute top-6 right-6 z-50">
-         <button onClick={() => setShowDonate(true)} className="py-2.5 px-5 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-400 font-black rounded-xl uppercase tracking-[0.2em] text-[10px] flex items-center space-x-2 transition-all hover:shadow-[0_0_20px_rgba(236,72,153,0.2)] active:scale-95">
-            <span className="text-base">☕</span>
-            <span>Tặng Cafe</span>
-         </button>
-      </div>
+      {/* Khung chính - Đã thêm class 'relative' để định vị nút Donate bên trong */}
+      <div className="max-w-md w-full glass border border-amber-500/30 rounded-[40px] p-10 text-center space-y-8 shadow-[0_0_100px_rgba(245,158,11,0.2)] relative">
+        
+        {/* Nút Donate - Đặt ở góc phải trên cùng CỦA CARD */}
+        <button 
+          onClick={() => setShowDonate(true)} 
+          className="absolute top-6 right-6 py-1.5 px-3 bg-pink-500/10 hover:bg-pink-500/20 border border-pink-500/30 text-pink-400 font-bold rounded-lg uppercase tracking-wider text-[9px] flex items-center space-x-1 transition-all hover:shadow-[0_0_15px_rgba(236,72,153,0.3)] active:scale-95"
+          title="Mời đội ngũ phát triển một ly cafe"
+        >
+            <span className="text-sm">☕</span>
+            <span>Cafe</span>
+        </button>
 
-      <div className="max-w-md w-full glass border border-amber-500/30 rounded-[40px] p-10 text-center space-y-8 shadow-[0_0_100px_rgba(245,158,11,0.2)]">
         <div className="w-24 h-24 bg-gradient-to-tr from-amber-600 to-yellow-600 rounded-[32px] mx-auto flex items-center justify-center shadow-2xl border border-amber-400/30">
           <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />

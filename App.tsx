@@ -31,6 +31,9 @@ const DEFAULT_ATMOSPHERES: Atmosphere[] = [
 
 const SIDEBAR_WIDTH = 380;
 
+// Các tỉ lệ khung hình hỗ trợ
+const ASPECT_RATIOS: AspectRatio[] = ["9:16", "3:4", "1:1", "4:3", "16:9", "21:9"];
+
 export default function App() {
   const [lang, setLang] = useState<Language>('vi');
   const [isKeyValidated, setIsKeyValidated] = useState(false);
@@ -49,6 +52,7 @@ export default function App() {
   const [isAnalyzingDNA, setIsAnalyzingDNA] = useState(false);
   const [clothing, setClothing] = useState<StylerMedia>();
   const [accessories, setAccessories] = useState<StylerMedia>();
+  const [backgroundRef, setBackgroundRef] = useState<StylerMedia>(); // New: Background Image State
   const [aspectRatio, setAspectRatio] = useState<AspectRatio>("3:4");
   const [imageSize, setImageSize] = useState<ImageSize>("1K");
   const [selectedAtmosphereId, setSelectedAtmosphereId] = useState<string>(DEFAULT_ATMOSPHERES[0].id);
@@ -83,6 +87,7 @@ export default function App() {
       hideBio: "Ẩn Dữ Liệu Gốc",
       atmoArch: "2. Kiến Trúc Bối Cảnh",
       luxuryEnv: "Không Gian Sang Trọng",
+      uploadBackground: "Tải Ảnh Nền Riêng",
       coutureSel: "3. Lựa Chọn Trang Phục",
       garment: "Quần Áo",
       accessory: "Phụ Kiện",
@@ -123,7 +128,8 @@ export default function App() {
       donateTitle: "Tặng đội ngũ phát triển 1 ly cafe",
       donateDesc: "Cảm ơn bạn đã đồng hành cùng V-Styler!",
       uploadQr: "Thay ảnh QR (Chỉ bạn thấy)",
-      useDefaultQr: "Dùng ảnh mặc định"
+      useDefaultQr: "Dùng ảnh mặc định",
+      aspectRatioLabel: "Tỉ lệ khung hình"
     },
     en: {
       headerSub: "Premium AI Fashion Synthesis",
@@ -136,6 +142,7 @@ export default function App() {
       hideBio: "Hide Raw Biometrics",
       atmoArch: "2. Atmosphere Architecture",
       luxuryEnv: "Luxury Environment",
+      uploadBackground: "Upload Custom Background",
       coutureSel: "3. Couture Selection",
       garment: "Garment",
       accessory: "Accessory",
@@ -176,7 +183,8 @@ export default function App() {
       donateTitle: "Buy the dev team a coffee",
       donateDesc: "Thank you for supporting V-Styler!",
       uploadQr: "Change QR (Local Only)",
-      useDefaultQr: "Use Default QR"
+      useDefaultQr: "Use Default QR",
+      aspectRatioLabel: "Aspect Ratio"
     }
   }[lang];
 
@@ -360,10 +368,11 @@ export default function App() {
         const currentPose = poseRefs.length > 0 ? poseRefs[i] : DEFAULT_POSES[lang][i % DEFAULT_POSES[lang].length];
         
         try {
+          // Pass backgroundRef to service
           const poseImg = await generatePose(
             characterRefs, clothing, currentPose, 
             { aspectRatio, imageSize, atmosphere: atmoObj.prompt, mode: tryOnMode }, 
-            accessories, characterDNA
+            accessories, backgroundRef, characterDNA
           );
           
           if (poseImg) {
@@ -518,7 +527,7 @@ export default function App() {
             <section className="relative z-50">
               <h3 className="text-[11px] font-black text-white/40 uppercase tracking-[0.2em] mb-5">{t.atmoArch}</h3>
               
-              <div className="relative" ref={dropdownRef}>
+              <div className="relative mb-4" ref={dropdownRef}>
                 <button 
                   onClick={() => setIsAtmoDropdownOpen(!isAtmoDropdownOpen)}
                   className="w-full p-4 rounded-2xl border bg-white/5 border-white/10 hover:border-amber-500/30 transition-all flex items-center justify-between group"
@@ -571,10 +580,42 @@ export default function App() {
                   </div>
                 )}
               </div>
+              
+              {/* UPLOAD BACKGROUND IMAGE */}
+              <div className="mt-4">
+                 <MediaUpload 
+                    label={t.uploadBackground}
+                    icon="🌄" 
+                    onUpload={setBackgroundRef} 
+                    value={backgroundRef} 
+                    compact={false}
+                    className="w-full aspect-[21/9]"
+                 />
+              </div>
             </section>
 
             <section>
               <h3 className="text-[11px] font-black text-white/40 uppercase tracking-[0.2em] mb-5">{t.coutureSel}</h3>
+
+              {/* ASPECT RATIO SELECTOR */}
+              <div className="mb-4 space-y-3 bg-white/5 p-4 rounded-3xl border border-white/5">
+                <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block">{t.aspectRatioLabel}</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {ASPECT_RATIOS.map((ratio) => (
+                    <button
+                      key={ratio}
+                      onClick={() => setAspectRatio(ratio)}
+                      className={`py-2 rounded-xl border text-[9px] font-black uppercase tracking-widest transition-all ${
+                        aspectRatio === ratio 
+                          ? 'bg-white text-black border-white shadow-[0_0_10px_rgba(255,255,255,0.3)]' 
+                          : 'bg-black border-white/10 text-white/30 hover:border-white/20 hover:text-white/60'
+                      }`}
+                    >
+                      {ratio}
+                    </button>
+                  ))}
+                </div>
+              </div>
               
               <div className="mb-6 space-y-3 bg-white/5 p-4 rounded-3xl border border-white/5">
                 <label className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em] block">{t.modeLabel}</label>

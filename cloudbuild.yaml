@@ -1,28 +1,36 @@
+
 steps:
-  # 1. Build the container image
+  # 1. Build Docker Image (Sử dụng Dockerfile multi-stage vừa tạo)
+  # Bước này sẽ thực hiện cả việc Build React App bên trong container
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/$PROJECT_ID/v-styler-pro', '.']
   
-  # 2. Push the container image to Container Registry
+  # 2. Push Image lên Google Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/v-styler-pro']
   
-  # 3. Deploy container image to Cloud Run
+  # 3. Deploy lên Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'app-tao-anh'
+      - 'v-styler-pro-service'  # Đặt tên service rõ ràng
       - '--image'
       - 'gcr.io/$PROJECT_ID/v-styler-pro'
       - '--region'
-      - 'asia-southeast1'
+      - 'asia-southeast1'       # Server đặt gần VN cho nhanh
       - '--platform'
       - 'managed'
-      - '--allow-unauthenticated'
+      - '--allow-unauthenticated' # Cho phép truy cập công khai
       - '--port'
       - '8080'
+      # Tăng cấu hình vì xử lý ảnh cần RAM
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
 
+# Cấu hình log để dễ debug
 options:
   logging: CLOUD_LOGGING_ONLY
